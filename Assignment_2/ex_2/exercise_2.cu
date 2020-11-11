@@ -19,10 +19,10 @@ double cpuSecond() {
     return ((double)tp.tv_sec + (double)tp.tv_usec*1.e-6);
  }
 
-__global__ void SAXPY_kernel(const float a, const float* x, float* y) {
+__global__ void SAXPY_kernel(const float a, const float* x, float* y, const int n) {
     // compute threads id
     const int tid = blockIdx.x*blockDim.x + threadIdx.x;
-    if(tid < ARRAY_SIZE) {
+    if(tid < n) {
         // perform thread-local computation
         y[tid] = a * x[tid] + y[tid];
     }
@@ -41,7 +41,7 @@ void device_SAXPY(const float a, const float* x, const float* y, float* c, const
     
     // perform computation on device
     times[0] = cpuSecond();
-    SAXPY_kernel<<<(ARRAY_SIZE+TPB-1)/TPB,TPB>>>(a, d_x, d_y);
+    SAXPY_kernel<<<(n+TPB-1)/TPB,TPB>>>(a, d_x, d_y, n);
     times[1] = cpuSecond();
     
     // wait for all threads to complete
@@ -82,6 +82,12 @@ int main(int argc, char* argv[]) {
     float* x, * y;
     int n = ARRAY_SIZE;
 
+    // set array size to input
+    int tmp;
+    if(argc > 1) {
+        tmp = atoi(argv[1]);
+        if(tmp > 0) n = tmp;
+    }
 
     // initialize vectors x and y in : c = a * x + y
     x = (float*)malloc(sizeof(float)*n);

@@ -1,3 +1,11 @@
+
+/*
+    KTH, APPLIED GPU PROGRAMMING DD2360
+    This code is written by Tobias Edwards
+    Part of course assignment 2
+    compile with: nvcc -arch=sm_XX
+*/
+
 #include <stdio.h>
 #include <stdint.h>
 #include <getopt.h>
@@ -61,6 +69,7 @@ void init_particles(Particle* parts, const int n) {
     }
 }
 
+// Euclidean distance between p1 and p2
 float distance_between_pts(const Particle* p1, const Particle* p2) {
     return sqrt(pow(p1->pos.x-p2->pos.x,2) + pow(p1->pos.y-p2->pos.y,2) + pow(p1->pos.z-p2->pos.z,2));
 }
@@ -85,7 +94,7 @@ int main(int argc, char* argv[]) {
 
     // process program arguments
     while((option = getopt(argc, argv, ":p:i:b:hd")) != -1){ 
-        switch(option){
+        switch(option) {
             case 'p':   // NUM_PARTICLES
                 tmp = atoi(optarg);
                 NUM_PARTICLES = tmp > 0 ? tmp : NUM_PARTICLES;
@@ -112,10 +121,12 @@ int main(int argc, char* argv[]) {
 
     // create particles
     printf("Creating particles...");
+    double part_time = cpuSecond();
     Particle* p, *d_p, *d_res;
     p = (Particle*)malloc(sizeof(Particle)*NUM_PARTICLES);
     init_particles(p,NUM_PARTICLES);
-    printf(" Done!\n");
+     part_time = cpuSecond() - part_time;
+    printf(" Done! Time = %f s\n", part_time);
 
     // if dev, init device
     if(dev) {
@@ -149,11 +160,11 @@ int main(int argc, char* argv[]) {
             step_kernel<<<dim_grid,dim_block>>>(d_p, v_factor, NUM_PARTICLES);
             cudaDeviceSynchronize();
             dev_end = cpuSecond();
-            dev_time = dev_end - dev_start;
+            dev_time += dev_end - dev_start;
         }
     }
     printf(" Done!\n");
-
+    
     // copy res from device to host
     if(dev) {
         cp_to_host = cpuSecond();
@@ -167,13 +178,13 @@ int main(int argc, char* argv[]) {
     if(dev && host) {
         printf("Comparing results...");
         res = compare(p, d_res, NUM_PARTICLES);
-        printf(" Done! %s\n", res ? "CORRECT!" : "INCORRECT!");
+        printf(" Done! %s\n", res ? "CORRECT :)" : "INCORRECT :(");
     }
 
     // free allocated memory on device
     if(host) cudaFree(d_p);
 
-    // free allocated memory
+    // free allocated memory on host
     free(p);
     
     // print timing results
@@ -183,12 +194,13 @@ int main(int argc, char* argv[]) {
 
     if(host) {
         printf("\n--HOST--\n");
-        printf("Avg. execution time: %f s\n", host_time/NUM_ITERATIONS);
+        printf("Avg. execution time: %f s\n", host_time/(double)NUM_ITERATIONS);
     }
     if(dev) {
         printf("\n--DEVICE--\n");
-        printf("BLOCK SIZE: %i\n", BLOCK_SIZE);
-        printf("Avg. execution time: %f s\n", dev_time/NUM_ITERATIONS);
+        printf("Number of blocks: %i\n", dim_grid.x);
+        printf("Block size: %i\n", dim_block.x);
+        printf("Avg. execution time: %f s\n", dev_time/(double)NUM_ITERATIONS);
         printf("Copy HostToDevice: %f s\n", cp_to_dev);
         printf("Copy DeviceToHost: %f s\n", cp_to_host);
     }

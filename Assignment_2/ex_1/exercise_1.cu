@@ -1,4 +1,11 @@
 
+/*
+    KTH, APPLIED GPU PROGRAMMING DD2360
+    This code is written by Tobias Edwards
+    Part of course assignment 2
+    compile with: nvcc -arch=sm_XX
+*/
+
 // reminder: use -arch=sm_52 for my gpu
 // add CUDA11.1 to PATH: export PATH=/usr/local/cuda-11.1/bin/${PATH:+:${PATH}}
 
