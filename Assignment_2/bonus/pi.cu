@@ -17,8 +17,8 @@ __global__ void iteration_kernel(int* counts, curandState* states, const int num
     if(tid < n) {
         double x,y;
         for(int i = 0; i < num_its; i++) {
-            x = curand_uniform_double(&states[tid]);
-            y = curand_uniform_double(&states[tid]);
+            x = curand_uniform(&states[tid]);
+            y = curand_uniform(&states[tid]);
             if(sqrt((x*x)+(y*y)) <= 1.0) counts[tid] += 1;
         }
     }
