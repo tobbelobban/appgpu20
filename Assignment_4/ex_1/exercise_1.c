@@ -14,7 +14,7 @@ const char* clGetErrorString(int);
 const char *mykernel = 
 "__kernel                                         \n"
 "void helloWorld ()                               \n"
-"{ int index = get_global_id(0);                  \n"
+"{ int index = get_local_id(0);                  \n"
 "printf(\"Hello world, from %i\\n\", index); }     \n";
 
 
@@ -44,10 +44,12 @@ int main(int argc, char *argv) {
   err = clBuildProgram(program, 1, device_list, NULL, NULL, NULL); CHK_ERROR(err);
   cl_kernel kernel = clCreateKernel(program, "helloWorld", &err); CHK_ERROR(err);
   
-  size_t work_items = 256;
-  size_t workgroup_size = 256;
+  size_t work_items[2] = {16,16};
+  size_t workgroup_size[2] = {1,1};
 
-  err = clEnqueueNDRangeKernel(cmd_queue, kernel, 1, NULL, &work_items, &workgroup_size, 0, NULL, NULL);
+  err = clEnqueueNDRangeKernel(cmd_queue, kernel, 2, NULL, work_items, workgroup_size, 0, NULL, NULL); CHK_ERROR(err);
+  err = clFlush(cmd_queue); CHK_ERROR(err);
+  err = clFinish(cmd_queue); CHK_ERROR(err);
 
   // Finally, release all that we have allocated.
   err = clReleaseCommandQueue(cmd_queue);CHK_ERROR(err);
