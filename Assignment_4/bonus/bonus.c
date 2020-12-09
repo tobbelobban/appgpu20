@@ -5,7 +5,7 @@
 #include <sys/time.h>
 #include <CL/cl.h>
 
-#define err_margin 1e-4
+#define MARGIN 1e-4
 
 typedef struct {
     float x;
@@ -46,6 +46,23 @@ const char *particle_step_kernel =
 "       p[index].p.z += p[index].v.z;                           \n"
 "}}";
 
+
+// Euclidean distance between p1 and p2
+float distance_between_pts(const Particle* p1, const Particle* p2) {
+    return sqrt(pow(p1->p.x-p2->p.x,2) + pow(p1->p.y-p2->p.y,2) + pow(p1->p.z-p2->p.z,2));
+}
+
+int compare_solutions(const Particle* res1, const Particle* res2, const int n) {
+    float dist;
+    for(int i = 0; i < n; i++) {
+        dist = distance_between_pts(&res1[i],&res2[i]);
+        if(dist > MARGIN) {
+            printf("Fail (i = %i). Distance: %f\n", i, dist);
+            return 0;
+        }
+    }
+    return 1;
+}
 void host_particle_step(Particle* p, float factor, int size) {
     for(int i = 0; i < size; i++) {
             // update velocity
@@ -72,13 +89,13 @@ void init_particles(Particle *p, int size) {
         vx = -1.0 + 2.0 * (float)rand()/RAND_MAX;
         vy = -1.0 + 2.0 * (float)rand()/RAND_MAX;
         vz = -1.0 + 2.0 * (float)rand()/RAND_MAX;
-        p[i] = {{px, py, pz}, {vx, vy, vz}};          
+        p[i] = (Particle){{px, py, pz}, {vx, vy, vz}};          
     }
 }
 
 int main(int argc, char *argv) {
     double time_dev, time_host;
-    int NUM_PARTICLES = 10000;
+    int NUM_PARTICLES = 10000, NUM_ITERATIONS = 1000, BLOCK_SIZE = 256;
 
     cl_platform_id * platforms; cl_uint     n_platform;
 
@@ -104,42 +121,47 @@ int main(int argc, char *argv) {
     int BYTES = NUM_PARTICLES*sizeof(Particle);
     p = (Particle*)malloc(BYTES);
     init_particles(p, NUM_PARTICLES);
+    float factor;
 
 
     // allocate buffers on device
-    cl_mem x_dev = clCreateBuffer(context, CL_MEM_READ_ONLY, array_bytes, NULL, &err); CHK_ERROR(err);
-    cl_mem y_dev = clCreateBuffer(context, CL_MEM_READ_WRITE, array_bytes, NULL, &err); CHK_ERROR(err);
+    cl_mem p_dev = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(Particle)*NUM_PARTICLES, NULL, &err); CHK_ERROR(err);
 
     // copy data from host to device
-    err = clEnqueueWriteBuffer(cmd_queue, x_dev, CL_TRUE, 0, array_bytes, x, 0, NULL, NULL); CHK_ERROR(err);
-    err = clEnqueueWriteBuffer(cmd_queue, y_dev, CL_TRUE, 0, array_bytes, y, 0, NULL, NULL); CHK_ERROR(err);
+    err = clEnqueueWriteBuffer(cmd_queue, p_dev, CL_TRUE, 0, sizeof(Particle)*NUM_PARTICLES, p, 0, NULL, NULL); CHK_ERROR(err);
     
     // compile the kernel    
-    cl_program program = clCreateProgramWithSource(context, 1, (const char**)&SAXPY_kernel, NULL, &err); CHK_ERROR(err);
+    cl_program program = clCreateProgramWithSource(context, 1, (const char**)&particle_step_kernel, NULL, &err); CHK_ERROR(err);
     err = clBuildProgram(program, 1, device_list, NULL, NULL, NULL); CHK_ERROR(err);
-    cl_kernel kernel = clCreateKernel(program, "device_SAXPY", &err); CHK_ERROR(err);
+    cl_kernel kernel = clCreateKernel(program, "dev_particle_step", &err); CHK_ERROR(err);
 
-    // set kernel arguments
-    err = clSetKernelArg(kernel, 0, sizeof(float), (void*) &alpha); CHK_ERROR(err);
-    err = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*) &x_dev); CHK_ERROR(err);
-    err = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void*) &y_dev); CHK_ERROR(err);
-    err = clSetKernelArg(kernel, 3, sizeof(float), (void*) &size); CHK_ERROR(err);
+    // set kernel arguments 0 and 2
+    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*) &p_dev); CHK_ERROR(err);
+    err = clSetKernelArg(kernel, 2, sizeof(int), (void*) &NUM_PARTICLES); CHK_ERROR(err);
 
     // set kernel work items/groups
-    size_t workgroup_size = 16;
-    size_t work_items = ((ARRAY_SIZE+workgroup_size-1)/workgroup_size)*workgroup_size;
-    printf("wg size = %li, wg items = %li\n", workgroup_size, work_items);
+    size_t workgroup_size = BLOCK_SIZE;
+    size_t work_items = ((NUM_PARTICLES+workgroup_size-1)/workgroup_size)*workgroup_size;
+    
+    // perform iterations
+    for(int i = 0; i < NUM_ITERATIONS; ++i) 
+    {
+        // update change factor
+        factor = -1.0 + 2.0 * (float)rand()/RAND_MAX;
 
-    // SAXPY
-    printf("Computing SAXPY on GPU...");
-    time_dev = cpuSecond();
-    err = clEnqueueNDRangeKernel(cmd_queue, kernel, 1, NULL, &work_items, &workgroup_size, 0, NULL, NULL); CHK_ERROR(err);
-    time_dev = cpuSecond() - time_dev;
-    printf(" Done!\n");
+        // perform step on host
+        host_particle_step(p, factor, NUM_PARTICLES);
+
+        // perform step on device
+        err = clSetKernelArg(kernel, 1, sizeof(float), (void*) &factor); CHK_ERROR(err);
+        err = clEnqueueNDRangeKernel(cmd_queue, kernel, 1, NULL, &work_items, &workgroup_size, 0, NULL, NULL); CHK_ERROR(err);    
+        clFinish(cmd_queue);
+    }
     
     // copy results back to device
-    dev_res = malloc(sizeof(float)*ARRAY_SIZE);
-    err = clEnqueueReadBuffer(cmd_queue, y_dev, CL_TRUE, 0, array_bytes, dev_res, 0, NULL, NULL); CHK_ERROR(err);
+
+    Particle *res_dev = (Particle*)malloc(sizeof(Particle)*NUM_PARTICLES);
+    err = clEnqueueReadBuffer(cmd_queue, p_dev, CL_TRUE, 0, sizeof(Particle)*NUM_PARTICLES, res_dev, 0, NULL, NULL); CHK_ERROR(err);
     
     // ensure all cmds to device are done
     err = clFlush(cmd_queue); CHK_ERROR(err);
@@ -148,24 +170,16 @@ int main(int argc, char *argv) {
     // Finally, release all that we have allocated.
     err = clReleaseCommandQueue(cmd_queue);CHK_ERROR(err);
     err = clReleaseContext(context);CHK_ERROR(err);
-    err = clReleaseMemObject(x_dev); CHK_ERROR(err);
-    err = clReleaseMemObject(y_dev); CHK_ERROR(err);
+    err = clReleaseMemObject(p_dev); CHK_ERROR(err);
     free(platforms);
     free(device_list);
 
-    // compute SAXPY on host
-    printf("Computing SAXPY on CPU...");
-    time_host = cpuSecond();
-    SAXPY_cpu(alpha, x, y);
-    time_host = cpuSecond() - time_host;
-    printf(" Done!\n");
-
     // compare solutions
-    int same = compare_solutions(dev_res, y);
+    int same = compare_solutions(res_dev, p, NUM_PARTICLES);
     printf("Same solutions? %i\n", same);
 
     // free allocated memory on host
-    free(x); free(y); free(dev_res);
+    free(p); free(res_dev);
 
     printf("Time GPU: %f s\n", time_dev);
     printf("Time CPU: %f s\n", time_host);
