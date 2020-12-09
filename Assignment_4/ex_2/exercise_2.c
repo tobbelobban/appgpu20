@@ -6,6 +6,8 @@
 #include <math.h>
 #include <sys/time.h>
 
+// COMPILED WITH: nvcc <file.c> -lOpenCL -o <file.out>
+
 #define ARRAY_SIZE 100000000
 #define MARGIN 0.00001
 
@@ -23,16 +25,18 @@ double cpuSecond() {
 
 
 const char *SAXPY_kernel = 
-"__kernel                                                                         \n"
-"void device_SAXPY (float a, __global float *x, __global float *y, int size)      \n"
-"{ const int index = get_global_id(0);                                            \n"
-"   if(index < size) y[index] = a * x[index] + y[index];}";
+"__kernel                                                                           \n"
+"void device_SAXPY (float a, __global float *x, __global float *y, int size)        \n"
+"{                                                                                  \n"
+"   const int index = get_global_id(0);                                             \n"
+"   if(index < size) y[index] = a * x[index] + y[index];                            \n"
+"}";
 
 void SAXPY_cpu(const float a, const float *x, float *y) {
     for(int i = 0; i < ARRAY_SIZE; ++i) y[i] = a * x[i] + y[i];
 }
 
-int compare_solutions(const float *res1, const float *res2) {
+int compare_solutions(const cl_float *res1, const cl_float *res2) {
     for(int i = 0; i < ARRAY_SIZE; ++i) {
         if(fabs(res1[i] - res2[i]) > MARGIN) {
             printf("Error (i == %i): %f != %f\n",i, res1[i], res2[i]);
@@ -66,15 +70,15 @@ int main(int argc, char *argv) {
     cl_command_queue cmd_queue = clCreateCommandQueue(context, device_list[0], 0, &err);CHK_ERROR(err); 
 
     // initialize alpha, x and y
-    float *x, *y, *dev_res;
-    int array_bytes = ARRAY_SIZE*sizeof(float);
-    x = (float*)malloc(array_bytes);
-    y = (float*)malloc(array_bytes;
+    cl_float *x, *y, *dev_res;
+    int array_bytes = ARRAY_SIZE*sizeof(cl_float);
+    x = (cl_float*)malloc(array_bytes);
+    y = (cl_float*)malloc(array_bytes);
     for(int i = 0; i < ARRAY_SIZE; ++i) {
-        x[i] = (float)rand()/(float)RAND_MAX;
-        y[i] = (float)rand()/(float)RAND_MAX;
+        x[i] = (cl_float)rand()/(cl_float)RAND_MAX;
+        y[i] = (cl_float)rand()/(cl_float)RAND_MAX;
     }
-    float alpha = (float)rand()/(float)RAND_MAX;
+    float alpha = (cl_float)rand()/(cl_float)RAND_MAX;
     int size = ARRAY_SIZE;
 
     // allocate buffers on device
@@ -91,10 +95,10 @@ int main(int argc, char *argv) {
     cl_kernel kernel = clCreateKernel(program, "device_SAXPY", &err); CHK_ERROR(err);
 
     // set kernel arguments
-    err = clSetKernelArg(kernel, 0, sizeof(float), (void*) &alpha); CHK_ERROR(err);
+    err = clSetKernelArg(kernel, 0, sizeof(cl_float), (void*) &alpha); CHK_ERROR(err);
     err = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*) &x_dev); CHK_ERROR(err);
     err = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void*) &y_dev); CHK_ERROR(err);
-    err = clSetKernelArg(kernel, 3, sizeof(float), (void*) &size); CHK_ERROR(err);
+    err = clSetKernelArg(kernel, 3, sizeof(cl_float), (void*) &size); CHK_ERROR(err);
 
     // set kernel work items/groups
     size_t workgroup_size = 16;
@@ -105,6 +109,7 @@ int main(int argc, char *argv) {
     printf("Computing SAXPY on GPU...");
     time_dev = cpuSecond();
     err = clEnqueueNDRangeKernel(cmd_queue, kernel, 1, NULL, &work_items, &workgroup_size, 0, NULL, NULL); CHK_ERROR(err);
+    err = clFinish(cmd_queue); CHK_ERROR(err);
     time_dev = cpuSecond() - time_dev;
     printf(" Done!\n");
 
@@ -133,7 +138,7 @@ int main(int argc, char *argv) {
 
     // compare solutions
     int same = compare_solutions(dev_res, y);
-    printf("Same solutions? %i\n", same);
+    printf("Same solutions? %s\n", (same ? "yes" : "no"));
 
     // free allocated memory on host
     free(x); free(y); free(dev_res);

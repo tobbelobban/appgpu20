@@ -5,6 +5,8 @@
 #include <sys/time.h>
 #include <CL/cl.h>
 
+// COMPILED WITH: nvcc <file.c> -lOpenCL -o <file.out>
+
 typedef struct {
     cl_float3 p;
     cl_float3 v;

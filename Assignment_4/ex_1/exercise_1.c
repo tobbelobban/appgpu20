@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <CL/cl.h>
 
+// COMPILED WITH: nvcc <file.c> -lOpenCL -o <file.out>
+
 // This is a macro for checking the error variable.
 #define CHK_ERROR(err) if (err != CL_SUCCESS) fprintf(stderr,"Error: %s\n",clGetErrorString(err));
 
