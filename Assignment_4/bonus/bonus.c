@@ -10,7 +10,7 @@ typedef struct {
     cl_float3 v;
 } Particle;
 
-#define MARGIN 1e-4
+#define MARGIN 1e-5
 
 // This is a macro for checking the error variable.
 #define CHK_ERROR(err) if (err != CL_SUCCESS) {fprintf(stderr,"Error (code=%i): %s\n",err, clGetErrorString(err));}
@@ -89,9 +89,28 @@ void init_particles(Particle *p, int size) {
     }
 }
 
-int main(int argc, char *argv) {
-    double time_dev, time_host;
-    int NUM_PARTICLES = 10000, NUM_ITERATIONS = 1000, BLOCK_SIZE = 256;
+int main(int argc, char **argv) {
+    double time_dev=0, time_host=0, tmp_time;
+    int NUM_PARTICLES = 10000, NUM_ITERATIONS = 1000, BLOCK_SIZE = 256, option, tmp;
+    // process program arguments
+    while((option = getopt(argc, argv, ":p:i:b:")) != -1){ 
+        switch(option) {
+            case 'p':   // NUM_PARTICLES
+                tmp = atoi(optarg);
+                NUM_PARTICLES = tmp > 0 ? tmp : NUM_PARTICLES;
+                break;
+            case 'b':   // BLOCK_SIZE
+                tmp = atoi(optarg);
+                BLOCK_SIZE = tmp > 0 ? tmp : BLOCK_SIZE;
+                break;
+            case 'i':   // NUM_ITERATIONS
+                tmp = atoi(optarg);
+                NUM_ITERATIONS = tmp > 0 ? tmp : NUM_ITERATIONS;
+                break;
+            default:
+            printf("Unrecognized flag.\n");
+        }
+    }
 
     cl_platform_id * platforms; cl_uint     n_platform;
 
@@ -153,16 +172,20 @@ int main(int argc, char *argv) {
         factor = -1.0 + 2.0 * (float)rand()/RAND_MAX;
 
         // perform step on host
+        tmp_time = cpuSecond();
         host_particle_step(p, factor, NUM_PARTICLES);
-        
+        time_host += cpuSecond() - tmp_time;
+
         // set kernel arguments 
         err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*) &p_dev); CHK_ERROR(err);
         err = clSetKernelArg(kernel, 1, sizeof(float), (void*) &factor); CHK_ERROR(err);
         err = clSetKernelArg(kernel, 2, sizeof(int), (void*) &NUM_PARTICLES); CHK_ERROR(err);
         
         // perform step on device
+        tmp_time = cpuSecond();
         err = clEnqueueNDRangeKernel(cmd_queue, kernel, 1, NULL, &work_items, &workgroup_size, 0, NULL, NULL); CHK_ERROR(err);    
         clFinish(cmd_queue);
+        time_dev += cpuSecond() - tmp_time;
     }
     
     // copy results back to device
@@ -182,13 +205,23 @@ int main(int argc, char *argv) {
 
     // compare solutions
     int same = compare_solutions(res_dev, p, NUM_PARTICLES);
-    printf("Same solutions? %i\n", same);
 
     // free allocated memory on host
     free(p); free(res_dev);
 
-    printf("Time GPU: %f s\n", time_dev);
-    printf("Time CPU: %f s\n", time_host);
+    // print results
+    printf("--PROBLEM SIZE--\n");
+    printf("NUM PARTICLES \t= %i\n", NUM_PARTICLES);
+    printf("NUM ITERATIONS \t= %i\n\n", NUM_ITERATIONS);
+
+    printf("--DEVICE SETUP--\n");
+    printf("WORK ITEMS \t\t= %li\n", work_items);
+    printf("WORK GROUP SIZE \t= %li\n\n", workgroup_size);
+
+    printf("--TIME--\n");
+    printf("Average step time (device): %f s\n", time_dev/NUM_ITERATIONS);
+    printf("Average step time (host): %f s\n", time_host/NUM_ITERATIONS);
+    printf("Same solutions? %s\n", (same ? "yes":"no"));
     return 0;
 }
 
