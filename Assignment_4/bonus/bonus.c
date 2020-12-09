@@ -5,23 +5,15 @@
 #include <sys/time.h>
 #include <CL/cl.h>
 
-#define MARGIN 1e-4
-
 typedef struct {
-    float x;
-    float y;
-    float z;
-} float3;
-
-typedef struct {
-    float3 p;
-    float3 v;
+    cl_float3 p;
+    cl_float3 v;
 } Particle;
 
-
+#define MARGIN 1e-4
 
 // This is a macro for checking the error variable.
-#define CHK_ERROR(err) if (err != CL_SUCCESS) fprintf(stderr,"Error: %s\n",clGetErrorString(err));
+#define CHK_ERROR(err) if (err != CL_SUCCESS) {fprintf(stderr,"Error (code=%i): %s\n",err, clGetErrorString(err));}
 
 // A errorCode to string converter (forward declaration)
 const char* clGetErrorString(int);
@@ -32,19 +24,22 @@ double cpuSecond() {
     return ((double)tp.tv_sec + (double)tp.tv_usec*1.e-6);
 }
 
+const char *particle_struct_string = "typedef struct {float3 p; float3 v;} Particle;";
+
 const char *particle_step_kernel = 
-"__kernel                                                       \n"
-"void dev_particle_step (Particle *p, float factor, int size)   \n"
-"{ const int index = get_global_id(0);                          \n"
-"   if(index < size) {                                          \n"
-"       if(factor == 0.0) factor = 1.0;                         \n"
-"       p[index].v.x *= factor;                                 \n"
-"       p[index].v.y *= factor;                                 \n"
-"       p[index].v.z *= factor;                                 \n"
-"       p[index].p.x += p[index].v.x;                           \n"
-"       p[index].p.y += p[index].v.y;                           \n"
-"       p[index].p.z += p[index].v.z;                           \n"
-"}}";
+"__kernel                                                                   \n"
+"void dev_particle_step (__global Particle *p, float factor, int size)      \n"
+"{ const int index = get_global_id(0);                                      \n"
+"   if(index < size) {                                                      \n"
+"       if(factor == 0.0) factor = 1.0;                                     \n"
+"       p[index].v.x *= factor;                                             \n"
+"       p[index].v.y *= factor;                                             \n"
+"       p[index].v.z *= factor;                                             \n"
+"       p[index].p.x += p[index].v.x;                                       \n"
+"       p[index].p.y += p[index].v.y;                                       \n"
+"       p[index].p.z += p[index].v.z;                                       \n"
+"   }                                                                       \n"
+"}";
 
 
 // Euclidean distance between p1 and p2
@@ -52,6 +47,7 @@ float distance_between_pts(const Particle* p1, const Particle* p2) {
     return sqrt(pow(p1->p.x-p2->p.x,2) + pow(p1->p.y-p2->p.y,2) + pow(p1->p.z-p2->p.z,2));
 }
 
+// compare solutions between host and device
 int compare_solutions(const Particle* res1, const Particle* res2, const int n) {
     float dist;
     for(int i = 0; i < n; i++) {
@@ -123,22 +119,29 @@ int main(int argc, char *argv) {
     init_particles(p, NUM_PARTICLES);
     float factor;
 
-
     // allocate buffers on device
-    cl_mem p_dev = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(Particle)*NUM_PARTICLES, NULL, &err); CHK_ERROR(err);
+    cl_mem p_dev = clCreateBuffer(context, CL_MEM_READ_WRITE, BYTES, NULL, &err); CHK_ERROR(err);
 
     // copy data from host to device
-    err = clEnqueueWriteBuffer(cmd_queue, p_dev, CL_TRUE, 0, sizeof(Particle)*NUM_PARTICLES, p, 0, NULL, NULL); CHK_ERROR(err);
+    err = clEnqueueWriteBuffer(cmd_queue, p_dev, CL_TRUE, 0, BYTES, p, 0, NULL, NULL); CHK_ERROR(err);
     
     // compile the kernel    
-    cl_program program = clCreateProgramWithSource(context, 1, (const char**)&particle_step_kernel, NULL, &err); CHK_ERROR(err);
+    const char* strings[2];
+    strings[0] = particle_struct_string;
+    strings[1] = particle_step_kernel;
+
+    cl_program program = clCreateProgramWithSource(context, 2, strings, NULL, &err); CHK_ERROR(err);
     err = clBuildProgram(program, 1, device_list, NULL, NULL, NULL); CHK_ERROR(err);
+    if(err != CL_SUCCESS) 
+    {
+        char buffer[2048]; size_t len;
+        clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, &len);
+        fprintf(stderr, "Build error: %s\n",buffer);
+        exit(0);
+    }
+
     cl_kernel kernel = clCreateKernel(program, "dev_particle_step", &err); CHK_ERROR(err);
-
-    // set kernel arguments 0 and 2
-    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*) &p_dev); CHK_ERROR(err);
-    err = clSetKernelArg(kernel, 2, sizeof(int), (void*) &NUM_PARTICLES); CHK_ERROR(err);
-
+    
     // set kernel work items/groups
     size_t workgroup_size = BLOCK_SIZE;
     size_t work_items = ((NUM_PARTICLES+workgroup_size-1)/workgroup_size)*workgroup_size;
@@ -151,17 +154,20 @@ int main(int argc, char *argv) {
 
         // perform step on host
         host_particle_step(p, factor, NUM_PARTICLES);
-
-        // perform step on device
+        
+        // set kernel arguments 
+        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*) &p_dev); CHK_ERROR(err);
         err = clSetKernelArg(kernel, 1, sizeof(float), (void*) &factor); CHK_ERROR(err);
+        err = clSetKernelArg(kernel, 2, sizeof(int), (void*) &NUM_PARTICLES); CHK_ERROR(err);
+        
+        // perform step on device
         err = clEnqueueNDRangeKernel(cmd_queue, kernel, 1, NULL, &work_items, &workgroup_size, 0, NULL, NULL); CHK_ERROR(err);    
         clFinish(cmd_queue);
     }
     
     // copy results back to device
-
-    Particle *res_dev = (Particle*)malloc(sizeof(Particle)*NUM_PARTICLES);
-    err = clEnqueueReadBuffer(cmd_queue, p_dev, CL_TRUE, 0, sizeof(Particle)*NUM_PARTICLES, res_dev, 0, NULL, NULL); CHK_ERROR(err);
+    Particle *res_dev = (Particle*)malloc(BYTES);
+    err = clEnqueueReadBuffer(cmd_queue, p_dev, CL_TRUE, 0, BYTES, res_dev, 0, NULL, NULL); CHK_ERROR(err);
     
     // ensure all cmds to device are done
     err = clFlush(cmd_queue); CHK_ERROR(err);
