@@ -89,7 +89,7 @@ bool compare(const Particle* res1, const Particle* res2, const int n) {
 int main(int argc, char* argv[]) {
     int NUM_PARTICLES = 10000, NUM_ITERATIONS = 1000, BLOCK_SIZE = 256;
     int option, tmp;
-    double host_start, host_end, dev_start, dev_end, cp_to_dev, cp_to_host, host_time = 0, dev_time = 0;
+    double host_start, host_end, dev_start, dev_end, total_dev_time=0, cp_to_dev, cp_to_host, host_time = 0, dev_time = 0;
     bool host = 1, dev = 1;
 
     // process program arguments
@@ -120,23 +120,23 @@ int main(int argc, char* argv[]) {
      }
 
     // create particles
-    printf("Creating particles...");
+    //printf("Creating particles...");
     double part_time = cpuSecond();
     Particle* p, *d_p, *d_res;
     p = (Particle*)malloc(sizeof(Particle)*NUM_PARTICLES);
     init_particles(p,NUM_PARTICLES);
      part_time = cpuSecond() - part_time;
-    printf(" Done! Time = %f s\n", part_time);
+    //printf(" Done! Time = %f s\n", part_time);
 
     // if dev, init device
     if(dev) {
         // copy particles to device
-        printf("Copying particles to device...");
+        //printf("Copying particles to device...");
         cp_to_dev = cpuSecond();
         cudaMalloc((void**)&d_p, sizeof(Particle)*NUM_PARTICLES);
         cudaMemcpy(d_p, p, sizeof(Particle)*NUM_PARTICLES, cudaMemcpyHostToDevice);
         cp_to_dev = cpuSecond() - cp_to_dev;
-        printf(" Done!\n");
+        //printf(" Done!\n");
     }
 
     // setup grid and block sizes
@@ -145,8 +145,8 @@ int main(int argc, char* argv[]) {
     
     // perform computations
     float v_factor;
-    printf("Starting computations, please wait...");
-    fflush(stdout);
+    // printf("Starting computations, please wait...");
+    // fflush(stdout);
     for(int it = 0; it < NUM_ITERATIONS; it++) {
         v_factor = -1.0 + 2.0 * (float)rand()/RAND_MAX; // v_factor in [-1,1]
         if(host) {
@@ -163,7 +163,7 @@ int main(int argc, char* argv[]) {
             dev_time += dev_end - dev_start;
         }
     }
-    printf(" Done!\n");
+    //printf(" Done!\n");
     
     // copy res from device to host
     if(dev) {
@@ -188,21 +188,22 @@ int main(int argc, char* argv[]) {
     free(p);
     
     // print timing results
-    printf("\n--SETUP--\n");
-    printf("NUM_ITERATIONS: %i\n", NUM_ITERATIONS);
-    printf("NUM_PARTICLES: %i\n", NUM_PARTICLES);
+    // printf("\n--SETUP--\n");
+    // printf("NUM_ITERATIONS: %i\n", NUM_ITERATIONS);
+    // printf("NUM_PARTICLES: %i\n", NUM_PARTICLES);
 
     if(host) {
         printf("\n--HOST--\n");
         printf("Avg. execution time: %f s\n", host_time/(double)NUM_ITERATIONS);
     }
     if(dev) {
-        printf("\n--DEVICE--\n");
-        printf("Number of blocks: %i\n", dim_grid.x);
-        printf("Block size: %i\n", dim_block.x);
-        printf("Avg. execution time: %f s\n", dev_time/(double)NUM_ITERATIONS);
-        printf("Copy HostToDevice: %f s\n", cp_to_dev);
-        printf("Copy DeviceToHost: %f s\n", cp_to_host);
+        // printf("\n--DEVICE--\n");
+        // printf("Number of blocks: %i\n", dim_grid.x);
+        // printf("Block size: %i\n", dim_block.x);
+        // printf("Avg. execution time: %f s\n", dev_time/(double)NUM_ITERATIONS);
+        // printf("Copy HostToDevice: %f s\n", cp_to_dev);
+        // printf("Copy DeviceToHost: %f s\n", cp_to_host);
+        printf("%f\n", cp_to_host+cp_to_dev+dev_time);
     }
     
     return 0;

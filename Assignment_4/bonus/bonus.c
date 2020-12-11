@@ -81,21 +81,21 @@ void init_particles(Particle *p, int size) {
     float px, py, pz, vx, vy, vz;
     for(int i = 0; i < size; ++i) {
         // random values in range [-1,1]
-        px = -1.0 + 2.0 * (float)rand()/RAND_MAX;
-        py = -1.0 + 2.0 * (float)rand()/RAND_MAX;
-        pz = -1.0 + 2.0 * (float)rand()/RAND_MAX;
-        vx = -1.0 + 2.0 * (float)rand()/RAND_MAX;
-        vy = -1.0 + 2.0 * (float)rand()/RAND_MAX;
-        vz = -1.0 + 2.0 * (float)rand()/RAND_MAX;
+        px = -1.0 + 2.0 * (cl_float)rand()/RAND_MAX;
+        py = -1.0 + 2.0 * (cl_float)rand()/RAND_MAX;
+        pz = -1.0 + 2.0 * (cl_float)rand()/RAND_MAX;
+        vx = -1.0 + 2.0 * (cl_float)rand()/RAND_MAX;
+        vy = -1.0 + 2.0 * (cl_float)rand()/RAND_MAX;
+        vz = -1.0 + 2.0 * (cl_float)rand()/RAND_MAX;
         p[i] = (Particle){{px, py, pz}, {vx, vy, vz}};          
     }
 }
 
 int main(int argc, char **argv) {
-    double time_dev=0, time_host=0, tmp_time;
-    int NUM_PARTICLES = 10000, NUM_ITERATIONS = 1000, BLOCK_SIZE = 256, option, tmp;
+    double time_dev=0, total_time_dev=0, time_host=0, tmp_time;
+    int NUM_PARTICLES = 10000, NUM_ITERATIONS = 1000, BLOCK_SIZE = 256, option, tmp, host=1;
     // process program arguments
-    while((option = getopt(argc, argv, ":p:i:b:")) != -1){ 
+    while((option = getopt(argc, argv, ":p:i:b:h")) != -1){ 
         switch(option) {
             case 'p':   // NUM_PARTICLES
                 tmp = atoi(optarg);
@@ -108,6 +108,9 @@ int main(int argc, char **argv) {
             case 'i':   // NUM_ITERATIONS
                 tmp = atoi(optarg);
                 NUM_ITERATIONS = tmp > 0 ? tmp : NUM_ITERATIONS;
+                break;
+            case 'h':
+                host = 0;
                 break;
             default:
             printf("Unrecognized flag.\n");
@@ -138,14 +141,17 @@ int main(int argc, char **argv) {
     int BYTES = NUM_PARTICLES*sizeof(Particle);
     p = (Particle*)malloc(BYTES);
     init_particles(p, NUM_PARTICLES);
-    float factor;
+    cl_float factor;
 
     // allocate buffers on device
+    total_time_dev = cpuSecond();
     cl_mem p_dev = clCreateBuffer(context, CL_MEM_READ_WRITE, BYTES, NULL, &err); CHK_ERROR(err);
 
     // copy data from host to device
     err = clEnqueueWriteBuffer(cmd_queue, p_dev, CL_TRUE, 0, BYTES, p, 0, NULL, NULL); CHK_ERROR(err);
-    
+    err = clFinish(cmd_queue); CHK_ERROR(err);
+    total_time_dev = cpuSecond() - total_time_dev;
+
     // compile the kernel    
     const char* strings[2];
     strings[0] = particle_struct_string;
@@ -167,32 +173,39 @@ int main(int argc, char **argv) {
     size_t workgroup_size = BLOCK_SIZE;
     size_t work_items = ((NUM_PARTICLES+workgroup_size-1)/workgroup_size)*workgroup_size;
     
+    // set kernel arguments 0 and 2
+    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*) &p_dev); CHK_ERROR(err);
+    err = clSetKernelArg(kernel, 2, sizeof(int), (void*) &NUM_PARTICLES); CHK_ERROR(err);
+
     // perform iterations
     for(int i = 0; i < NUM_ITERATIONS; ++i) 
     {
         // update change factor
         factor = -1.0 + 2.0 * (float)rand()/RAND_MAX;
-
-        // perform step on host
-        tmp_time = cpuSecond();
-        host_particle_step(p, factor, NUM_PARTICLES);
-        time_host += cpuSecond() - tmp_time;
-
-        // set kernel arguments 
-        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*) &p_dev); CHK_ERROR(err);
-        err = clSetKernelArg(kernel, 1, sizeof(float), (void*) &factor); CHK_ERROR(err);
-        err = clSetKernelArg(kernel, 2, sizeof(int), (void*) &NUM_PARTICLES); CHK_ERROR(err);
+        if(host)
+        {
+            // perform step on host
+            tmp_time = cpuSecond();
+            host_particle_step(p, factor, NUM_PARTICLES);
+            time_host += cpuSecond() - tmp_time;
+        }
         
+        // update kernel argument 1
+        err = clSetKernelArg(kernel, 1, sizeof(cl_float), (void*) &factor); CHK_ERROR(err);
+    
         // perform step on device
         tmp_time = cpuSecond();
-        err = clEnqueueNDRangeKernel(cmd_queue, kernel, 1, NULL, &work_items, &workgroup_size, 0, NULL, NULL); CHK_ERROR(err);    
+        err = clEnqueueNDRangeKernel(cmd_queue, kernel, 1, NULL, &work_items, &workgroup_size, 0, NULL, NULL); CHK_ERROR(err);            
         clFinish(cmd_queue);
         time_dev += cpuSecond() - tmp_time;
     }
     
     // copy results back to device
+    tmp_time = cpuSecond();
     Particle *res_dev = (Particle*)malloc(BYTES);
     err = clEnqueueReadBuffer(cmd_queue, p_dev, CL_TRUE, 0, BYTES, res_dev, 0, NULL, NULL); CHK_ERROR(err);
+    err = clFinish(cmd_queue); CHK_ERROR(err);
+    total_time_dev += cpuSecond() - tmp_time;
     
     // ensure all cmds to device are done
     err = clFlush(cmd_queue); CHK_ERROR(err);
@@ -206,12 +219,15 @@ int main(int argc, char **argv) {
     free(device_list);
 
     // compare solutions
-    int same = compare_solutions(res_dev, p, NUM_PARTICLES);
+    int same;
+    if(host) same = compare_solutions(res_dev, p, NUM_PARTICLES);
 
     // free allocated memory on host
     free(p); free(res_dev);
 
     // print results
+    total_time_dev += time_dev;
+
     printf("--PROBLEM SIZE--\n");
     printf("NUM PARTICLES \t= %i\n", NUM_PARTICLES);
     printf("NUM ITERATIONS \t= %i\n\n", NUM_ITERATIONS);
@@ -220,10 +236,14 @@ int main(int argc, char **argv) {
     printf("WORK ITEMS \t\t= %li\n", work_items);
     printf("WORK GROUP SIZE \t= %li\n\n", workgroup_size);
 
+    if(host) printf("SAME SOLUTION? %s\n\n", (same ? "YES":"NO"));
+
     printf("--TIME--\n");
-    printf("Average step time (device): %f s\n", time_dev/NUM_ITERATIONS);
-    printf("Average step time (host): %f s\n", time_host/NUM_ITERATIONS);
-    printf("Same solutions? %s\n", (same ? "yes":"no"));
+    printf("Average step time (device) \t = %f s\n", time_dev/NUM_ITERATIONS);
+    if(host) printf("Average step time (host) \t = %f s\n", time_host/NUM_ITERATIONS);
+    printf("Total time (device) \t\t = %f s\n", total_time_dev);
+    if(host) printf("Total time (host) \t\t = %f s\n", time_host);
+    
     return 0;
 }
 
