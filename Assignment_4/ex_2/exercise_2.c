@@ -78,8 +78,8 @@ int main(int argc, char *argv) {
         x[i] = (cl_float)rand()/(cl_float)RAND_MAX;
         y[i] = (cl_float)rand()/(cl_float)RAND_MAX;
     }
-    float alpha = (cl_float)rand()/(cl_float)RAND_MAX;
-    int size = ARRAY_SIZE;
+    cl_float alpha = (cl_float)rand()/(cl_float)RAND_MAX;
+    cl_int size = ARRAY_SIZE;
 
     // allocate buffers on device
     cl_mem x_dev = clCreateBuffer(context, CL_MEM_READ_ONLY, array_bytes, NULL, &err); CHK_ERROR(err);
@@ -98,7 +98,7 @@ int main(int argc, char *argv) {
     err = clSetKernelArg(kernel, 0, sizeof(cl_float), (void*) &alpha); CHK_ERROR(err);
     err = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*) &x_dev); CHK_ERROR(err);
     err = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void*) &y_dev); CHK_ERROR(err);
-    err = clSetKernelArg(kernel, 3, sizeof(cl_float), (void*) &size); CHK_ERROR(err);
+    err = clSetKernelArg(kernel, 3, sizeof(cl_int), (void*) &size); CHK_ERROR(err);
 
     // set kernel work items/groups
     size_t workgroup_size = 16;
@@ -114,7 +114,7 @@ int main(int argc, char *argv) {
     printf(" Done!\n");
 
     // copy results back to device
-    dev_res = malloc(sizeof(float)*ARRAY_SIZE);
+    dev_res = malloc(array_bytes);
     err = clEnqueueReadBuffer(cmd_queue, y_dev, CL_TRUE, 0, array_bytes, dev_res, 0, NULL, NULL); CHK_ERROR(err);
     
     // ensure all cmds to device are done

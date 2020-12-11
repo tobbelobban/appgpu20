@@ -78,7 +78,7 @@ void host_particle_step(Particle* p, float factor, int size) {
 
 void init_particles(Particle *p, int size) {
     // initialize particles
-    float px, py, pz, vx, vy, vz;
+    cl_float px, py, pz, vx, vy, vz;
     for(int i = 0; i < size; ++i) {
         // random values in range [-1,1]
         px = -1.0 + 2.0 * (cl_float)rand()/RAND_MAX;
