@@ -6,7 +6,7 @@
 #include <sys/time.h>
 #include <cuda.h>
 
-#define err_margin 1e-3
+#define err_margin 1e-2
 
 typedef struct {
     int nrows, ncols, nnz;
@@ -554,7 +554,9 @@ int main(int argc, char* argv[])
     fflush(stdout);
 
     printf("############################################\n\n");
-    printf("-- CRS --\nSIZE (bytes)\nvals\t= %li \ncols\t= %li\nrow\t= %li\n\n", sizeof(float)*host_crs.nnz, sizeof(int)*host_crs.nnz, sizeof(int)*(host_crs.nrows+1));
+    
+    unsigned long long total_size =  sizeof(float)*host_crs.nnz + sizeof(int)*host_crs.nnz + sizeof(int)*(host_crs.nrows+1);
+    printf("-- CRS --\nSIZE (bytes)\nvals CRS\t= %li \ncols CRS\t= %li\nrows CRS\t= %li\ntotal size CRS\t= %lli\n\n", sizeof(float)*host_crs.nnz, sizeof(int)*host_crs.nnz, sizeof(int)*(host_crs.nrows+1), total_size);
 
     // setup grid and block sizes
     dim3 dim_grid((nrows+block_size-1)/block_size, 1, 1);
@@ -651,11 +653,11 @@ int main(int argc, char* argv[])
     printf("iterations = %i\n", iterations);
     // print CRS statistics
     if(verify) printf("number of correct iterations: %i\n", same_counter);
-    printf("\nMEMORY\nalloc & copy\t= %f s\nmean\t\t= %f s\nstddev\t\t= %f s\n", stats[0], stats[1], stats[2]);
+    printf("\nMEMORY\nalloc & copy CRS\t= %f s\nmean mem CRS\t\t= %f s\nstddev mem CRS\t\t= %f s\n", stats[0], stats[1], stats[2]);
 
     // get statistics for SpMVM-CRS
     calc_statistics(stats, SpMVM_times, iterations);
-    printf("\nSpMVM-CRS\ntotal time\t= %f s\nmean\t\t= %f s\nstddev\t\t= %f s\n\n", stats[0], stats[1], stats[2]);
+    printf("\nSpMVM\ntotal time CRS\t\t= %f s\nmean time CRS\t\t= %f s\nstddev time CRS\t\t= %f s\n\n", stats[0], stats[1], stats[2]);
     
     //clear previous result
     cudaRes = cudaMemset((void*)d_y, 0, sizeof(float)*host_crs.nrows); checkCudaOp(cudaRes);
@@ -670,8 +672,9 @@ int main(int argc, char* argv[])
 
     if(host_ellpack.nnz > 0)
     {
+        total_size = sizeof(float)*host_ellpack.size + sizeof(int)*host_ellpack.size;
         printf("############################################\n\n");
-        printf("-- ELLPACK --\nSIZE (bytes)\nvals\t\t= %lli\ncols\t\t= %lli\noccupancy\t= %f\n\n", sizeof(float)*host_ellpack.size, sizeof(int)*host_ellpack.size, host_ellpack.occ);
+        printf("-- ELLPACK --\nSIZE (bytes)\nvals ELLPACK\t\t= %lli\ncols ELLPACK\t\t= %lli\ntotal size ELLPACK\t= %lli\noccupancy ELLPACK\t= %f\n\n", sizeof(float)*host_ellpack.size, sizeof(int)*host_ellpack.size, total_size, host_ellpack.occ);
 
         ellpack d_ellpack;
         d_ellpack.nrows = host_ellpack.nrows;
@@ -732,11 +735,11 @@ int main(int argc, char* argv[])
         
         // print ELLPACK statistics
         if(verify) printf("number of correct iterations: %i\n", same_counter);
-        printf("\nMEMORY\nalloc & copy\t= %f s\nmean\t\t= %f s\nstddev\t\t= %f s\n", stats[0], stats[1], stats[2]);
+        printf("\nMEMORY\nalloc & copy ELLPACK\t\t= %f s\nmean mem ELLPACK\t\t= %f s\nstddev mem ELLPACK\t\t= %f s\n", stats[0], stats[1], stats[2]);
 
         // get statistics for SpMVM-ELLPACK
         calc_statistics(stats, SpMVM_times, iterations);
-        printf("\nSpMVM-ELLPACK\ntotal time\t= %f s\nmean\t\t= %f s\nstddev\t\t= %f s\n\n", stats[0], stats[1], stats[2]);
+        printf("\nSpMVM\ntotal time ELLPACK\t\t= %f s\nmean time ELLPACK\t\t= %f s\nstddev time ELLPACK\t\t= %f s\n\n", stats[0], stats[1], stats[2]);
 
         //clear previous result
         cudaRes = cudaMemset((void*)d_y, 0, sizeof(float)*nrows); checkCudaOp(cudaRes);
@@ -752,8 +755,9 @@ int main(int argc, char* argv[])
 
     if(host_sell.nnz > 0)
     {
+        total_size = sizeof(float)*host_sell.size + sizeof(int)*host_sell.size + sizeof(int)*host_sell.nc + sizeof(int)*host_sell.nc;
         printf("############################################\n\n");
-        printf("-- SELL --\nSIZE (bytes)\nvals\t\t= %lli\ncols\t\t= %lli\ncs\t= %li\ncl\t= %li\noccupancy\t= %f\n\n", sizeof(float)*host_sell.size, sizeof(int)*host_sell.size, sizeof(int)*host_sell.nc, sizeof(int)*host_sell.nc, host_sell.occ);
+        printf("-- SELL --\nSIZE (bytes)\nvals SELL\t\t= %lli\ncols SELL\t\t= %lli\ncs\t\t= %li\ncl\t\t= %li\ntotal size SELL\t= %lli\noccupancy SELL\t= %f\n\n", sizeof(float)*host_sell.size, sizeof(int)*host_sell.size, sizeof(int)*host_sell.nc, sizeof(int)*host_sell.nc, total_size, host_sell.occ);
 
         sell d_sell;
         d_sell.nrows = host_sell.nrows;
@@ -827,11 +831,11 @@ int main(int argc, char* argv[])
         
         // print SELL statistics
         if(verify) printf("number of correct iterations: %i\n", same_counter);
-        printf("\nMEMORY\nalloc & copy\t= %f s\nmean\t\t= %f s\nstddev\t\t= %f s\n", stats[0], stats[1], stats[2]);
+        printf("\nMEMORY\nalloc & copy SELL\t= %f s\nmean mem SELL\t\t= %f s\nstddev mem SELL\t\t= %f s\n", stats[0], stats[1], stats[2]);
 
         // get statistics for SpMVM-SELL
         calc_statistics(stats, SpMVM_times, iterations);
-        printf("\nSpMVM-SELL\ntotal time\t= %f s\nmean\t\t= %f s\nstddev\t\t= %f s\n", stats[0], stats[1], stats[2]);
+        printf("\nSpMVM\ntotal time SELL\t\t= %f s\nmean time SELL\t\t= %f s\nstddev time SELL\t= %f s\n\n", stats[0], stats[1], stats[2]);
 
         //clear previous result
         cudaRes = cudaMemset((void*)d_y, 0, sizeof(float)*nrows); checkCudaOp(cudaRes);
@@ -848,7 +852,8 @@ int main(int argc, char* argv[])
     if(host_coo.nnz > 0)
     {
         printf("############################################\n\n");
-        printf("-- COO --\nSIZE (bytes)\nvals\t= %li\ncols\t= %li\nrows\t= %li\n\n", sizeof(float)*host_coo.nnz, sizeof(int)*host_coo.nnz, sizeof(int)*host_coo.nnz);
+        total_size = sizeof(float)*host_coo.nnz + sizeof(int)*host_coo.nnz + sizeof(int)*host_coo.nnz;
+        printf("-- COO --\nSIZE (bytes)\nvals COO\t= %li\ncols COO\t= %li\nrows COO\t= %li\ntotal size COO\t= %lli\n\n", sizeof(float)*host_coo.nnz, sizeof(int)*host_coo.nnz, sizeof(int)*host_coo.nnz, total_size);
 
         // setup grid size for COO 
         dim3 COO_dim_grid((host_coo.nnz+block_size-1)/block_size, 1, 1);
@@ -914,11 +919,11 @@ int main(int argc, char* argv[])
         
         // print SELL statistics
         if(verify) printf("number of correct iterations: %i\n", same_counter);
-        printf("\nMEMORY\nalloc & copy\t= %f s\nmean\t\t= %f s\nstddev\t\t= %f s\n", stats[0], stats[1], stats[2]);
+        printf("\nMEMORY\nalloc & copy COO\t= %f s\nmean mem COO\t\t= %f s\nstddev mem COO\t\t= %f s\n", stats[0], stats[1], stats[2]);
 
         // get statistics for SpMVM-SELL
         calc_statistics(stats, SpMVM_times, iterations);
-        printf("\nSpMVM-SELL\ntotal time\t= %f s\nmean\t\t= %f s\nstddev\t\t= %f s\n", stats[0], stats[1], stats[2]);
+        printf("\nSpMVM\ntotal time COO\t\t= %f s\nmean time COO\t\t= %f s\nstddev time COO\t\t= %f s\n", stats[0], stats[1], stats[2]);
     }
 
     // free allocations on host and device

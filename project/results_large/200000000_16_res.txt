@@ -1,0 +1,98 @@
+
+-- Generating sparse m x n matrix --
+m	= 1000000
+n	= 1000000
+NNZ	= 199980125
+NNZ/(m x n) = 0.000200
+
+block size	= 16
+
+############################################
+
+-- CRS --
+SIZE (bytes)
+vals CRS	= 799920500 
+cols CRS	= 799920500
+rows CRS	= 4000004
+total size CRS	= 1603841004
+
+iterations = 200
+number of correct iterations: 200
+
+MEMORY
+alloc & copy CRS	= 49.555471 s
+mean mem CRS		= 0.247777 s
+stddev mem CRS		= 0.005264 s
+
+SpMVM
+total time CRS		= 24.977622 s
+mean time CRS		= 0.124888 s
+stddev time CRS		= 0.001106 s
+
+############################################
+
+-- ELLPACK --
+SIZE (bytes)
+vals ELLPACK		= 1076000000
+cols ELLPACK		= 1076000000
+total size ELLPACK	= 2152000000
+occupancy ELLPACK	= 0.743421
+
+iterations = 200
+number of correct iterations: 200
+
+MEMORY
+alloc & copy ELLPACK		= 68.297683 s
+mean mem ELLPACK		= 0.341488 s
+stddev mem ELLPACK		= 0.007331 s
+
+SpMVM
+total time ELLPACK		= 10.811994 s
+mean time ELLPACK		= 0.054060 s
+stddev time ELLPACK		= 0.000547 s
+
+############################################
+
+-- SELL --
+SIZE (bytes)
+vals SELL		= 904639552
+cols SELL		= 904639552
+cs		= 250000
+cl		= 250000
+total size SELL	= 1809779104
+occupancy SELL	= 0.884242
+
+iterations = 200
+number of correct iterations: 200
+
+MEMORY
+alloc & copy SELL	= 56.119568 s
+mean mem SELL		= 0.280598 s
+stddev mem SELL		= 0.005968 s
+
+SpMVM
+total time SELL		= 9.214992 s
+mean time SELL		= 0.046075 s
+stddev time SELL	= 0.000306 s
+
+############################################
+
+-- COO --
+SIZE (bytes)
+vals COO	= 799920500
+cols COO	= 799920500
+rows COO	= 799920500
+total size COO	= 2399761500
+
+iterations = 200
+number of correct iterations: 200
+
+MEMORY
+alloc & copy COO	= 75.362589 s
+mean mem COO		= 0.376813 s
+stddev mem COO		= 0.008261 s
+
+SpMVM
+total time COO		= 38.805305 s
+mean time COO		= 0.194027 s
+stddev time COO		= 0.000926 s
